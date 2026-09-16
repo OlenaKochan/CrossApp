@@ -3,12 +3,12 @@
 Предметна область: Склад. Сутності: Product, StockBatch, Warehouse, Movement. 
 Призначення: облік залишків товарів по партіях.
 ## Запуск 
-dotnet build 
+dotnet build
 dotnet run --project src/Cli 
 ## Середовище 
 .NET SDK 10.0, Windows 11 x64 / Ubuntu 24.04 x64
 
-## Додаткове завдання
+## Додаткове завдання лабораторна 1
 1. Self-contained публікація
 Проєкт опубліковано у режимі self-contained для двох різних RID: win-x64 — Windows 64-bit, linux-x64 — Linux 64-bit
 Команди публікації:
@@ -27,3 +27,9 @@ du -sh src/Cli/bin/Release/net10.0/linux-x64/publish
 dotnet run --project src/Cli
 Запуск із прапорцем --json:
 dotnet run --project src/Cli -- --json
+
+3. Запуск у Docker
+MSYS_NO_PATHCONV=1 docker run --rm -v "$PWD:/src" -w /src [mcr.microsoft.com/dotnet/sdk:10.0](https://mcr.microsoft.com/dotnet/sdk:10.0) dotnet run --project src/Cli
+
+
+
