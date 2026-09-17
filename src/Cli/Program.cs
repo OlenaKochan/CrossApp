@@ -1,7 +1,7 @@
 ﻿using Core;
 
 EnvironmentReport report = EnvironmentInfo.Collect();
-
+Console.OutputEncoding = System.Text.Encoding.UTF8;
 Console.WriteLine("CrossApp – інформація про середовище");
 Console.WriteLine(new string('-', 52));
 Console.WriteLine($"ОС : {report.OsDescription}");
