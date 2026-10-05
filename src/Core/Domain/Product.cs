@@ -1,7 +1,5 @@
 using Core.Dto;
-
 namespace Core.Domain;
-
 public sealed class Product
 {
     private int _quantity;
@@ -12,7 +10,6 @@ public sealed class Product
     public string Unit { get; }
     public string? Note { get; }
     public int Quantity => _quantity;
-
     // Приватний конструктор
     private Product(string id, string sku, string name, string unit, int quantity, string? note)
     {
