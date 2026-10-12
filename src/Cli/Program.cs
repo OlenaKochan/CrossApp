@@ -1,81 +1,110 @@
-﻿using Core.Domain;
-using Core.Dto;
+﻿using Core;
+using Core.Abstractions;
+using Core.Domain;
+using Core.Services;
+using Core.Storage;
 
-// ОСНОВНА ЧАСТИНА 
-Console.WriteLine("— Сценарій 1: успіх —");
-Product product = Product.Create("G-001", "sku-g01", "Секатор садовий Pro", "шт", 100);
-Console.WriteLine(product);
-product.RegisterArrival(50);
-product.Issue(30);
-Console.WriteLine(product);
+// Composition Root: єдине місце вибору конкретних класів[cite: 16, 19]
+bool useFile = args.Contains("--file");
+string dataPath = Path.Combine(AppContext.BaseDirectory, "data", "catalog.json");
 
-Product product2 = Product.Create("G-004", "sku-g04", "Шланг поливальний 25м", "бухт", 20);
-Console.WriteLine(product2);
-product2.RegisterArrival(10);
-product2.Issue(5);
-Console.WriteLine(product2);
-Console.WriteLine();
+ICatalogStore store = useFile
+    ? new FileCatalogStore(dataPath)
+    : new InMemoryCatalogStore(SampleData.Products());
 
-Console.WriteLine("— Сценарій 2: порушення інваріантів —");
-TryDo("видача більша за залишок", () => product.Issue(1000));
-TryDo("порожній SKU", () => Product.Create("G-002", "", "Пісок", "т", 10));
-TryDo("від'ємний залишок", () => Product.Create("G-003", "SKU-G03", "Цегла", "шт", -5));
-TryDo("порожній ID", () => Product.Create("", "SKU-G05", "Лопата", "шт", 10));
-TryDo("порожня назва", () => Product.Create("G-006", "SKU-G06", "", "шт", 15));
-Console.WriteLine();
+var service = new CatalogService(store);
 
-// ДОДАТКОВІ ЗАВДАННЯ 
-Console.WriteLine("— Додаткове завдання 1: перевірка інваріантів для ImportResult —");
-var dtos = new List<ProductDto>
+Console.WriteLine($"Сховище: {store.GetType().Name}");
+if (useFile)
 {
-    new("G-010", "SKU-G10", "Лопата садова", "шт", 20),
-    new("G-011", "", "Саджанець груші", "шт", 5),
-    new("G-012", "SKU-G12", "Шпагат", "м", -10),
-    new("G-013", "SKU-G13", "Ґрунт універсальний", "міш", 40),
-    new("G-014", "SKU-G14", "", "шт", 15),
-    new("", "SKU-G15", "Горщик керамічний", "шт", 8)
-};
-var importResult = new ImportResult<ProductDto>(dtos, []);
-var domainResult = ProductDomainLoader.FromImportResult(importResult);
-
-Console.WriteLine($"Успішно відновлено сутностей: {domainResult.Entities.Count}");
-foreach (var p in domainResult.Entities)
-    Console.WriteLine($"  {p}");
-
-Console.WriteLine($"Помилки доменних інваріантів: {domainResult.DomainErrors.Count}");
-foreach (var err in domainResult.DomainErrors)
-    Console.WriteLine($"  ! {err}");
+    Console.WriteLine($"Шлях до файлу: {dataPath}");
+}
 Console.WriteLine();
 
-Console.WriteLine("— Додаткове завдання 2: інваріант для двох сутностей —");
-var warehouse = Warehouse.Create("W-01", "Центральний склад", maxCapacity: 1);
-var p1 = Product.Create("P-01", "SKU-01", "Яблуня", "шт", 10);
-var p2 = Product.Create("P-02", "SKU-02", "Груша", "шт", 5);
-var pZero = Product.Create("P-03", "SKU-03", "Порожній ящик", "шт", 0);
+// 1. ДЕМОНСТРАЦІЯ БІЗНЕС-ОПЕРАЦІЙ СЕРВІСУ (Add, Receive, Issue, Find, Delete)
+Console.WriteLine("— 1. Операції сервісу: додавання товарів (Add) —");
+var item1 = service.Add("SKU-901", "Капельна стрічка 100м", "бухт", 10, "Новинка");
+Console.WriteLine($"  [Додано]   {item1.Id} [{item1.Sku}] {item1.Name,-26} — {item1.Quantity,3} {item1.Unit}");
 
-StockPlacementService.PlaceProductToWarehouse(p1, warehouse);
-Console.WriteLine($"Товар {p1.Sku} розміщено на складі {warehouse.Name}");
-TryDo("перевищення місткості складу", () => StockPlacementService.PlaceProductToWarehouse(p2, warehouse));
-TryDo("розміщення товару з нульовим залишком", () => StockPlacementService.PlaceProductToWarehouse(pZero, warehouse));
-TryDo("створення складу з невалідною місткістю", () => Warehouse.Create("W-02", "Склад добрив", 0));
+var item2 = service.Add("SKU-902", "Саджанець Магнолії", "шт", 5, "Декоративні");
+Console.WriteLine($"  [Додано]   {item2.Id} [{item2.Sku}] {item2.Name,-26} — {item2.Quantity,3} {item2.Unit}");
+
+var item3 = service.Add("SKU-903", "Система туманоутворення", "компл", 8);
+Console.WriteLine($"  [Додано]   {item3.Id} [{item3.Sku}] {item3.Name,-26} — {item3.Quantity,3} {item3.Unit}");
+
+var item4 = service.Add("SKU-904", "Горщик торф'яний 80мм", "уп", 50);
+Console.WriteLine($"  [Додано]   {item4.Id} [{item4.Sku}] {item4.Name,-26} — {item4.Quantity,3} {item4.Unit}");
 Console.WriteLine();
 
-Console.WriteLine("— Додаткове завдання 3: переходи станів накладної —");
-var order = ShipmentOrder.Create("SH-001");
-Console.WriteLine(order);
-order.ChangeStatus(ShipmentStatus.Confirmed);
-Console.WriteLine(order);
-TryDo("повернення з Confirmed у Draft", () => order.ChangeStatus(ShipmentStatus.Draft));
-order.ChangeStatus(ShipmentStatus.Cancelled);
-Console.WriteLine(order);
-TryDo("зміна після Cancelled", () => order.ChangeStatus(ShipmentStatus.Confirmed));
+Console.WriteLine("— 2. Операції надходження товару на склад (Receive) —");
+service.Receive(item1.Id, 15);
+var updated1 = service.Find(item1.Id)!;
+Console.WriteLine($"  [Прихід]   {updated1.Id} [{updated1.Sku}] {updated1.Name,-26} — новий залишок (+15): {updated1.Quantity} {updated1.Unit}");
 
-var order2 = ShipmentOrder.Create("SH-002");
-Console.WriteLine(order2);
-order2.ChangeStatus(ShipmentStatus.Cancelled);
-Console.WriteLine(order2);
-TryDo("повернення зі скасованого в чернетку", () => order2.ChangeStatus(ShipmentStatus.Draft));
-TryDo("повторне встановлення того самого стану", () => order2.ChangeStatus(ShipmentStatus.Cancelled));
+service.Receive(item2.Id, 10);
+var updated2 = service.Find(item2.Id)!;
+Console.WriteLine($"  [Прихід]   {updated2.Id} [{updated2.Sku}] {updated2.Name,-26} — новий залишок (+10): {updated2.Quantity} {updated2.Unit}");
+
+service.Receive(item3.Id, 4);
+var updated3 = service.Find(item3.Id)!;
+Console.WriteLine($"  [Прихід]   {updated3.Id} [{updated3.Sku}] {updated3.Name,-26} — новий залишок (+4):  {updated3.Quantity} {updated3.Unit}");
+Console.WriteLine();
+
+Console.WriteLine("— 3. Операції видачі товару зі складу (Issue) —");
+service.Issue(item1.Id, 7);
+updated1 = service.Find(item1.Id)!;
+Console.WriteLine($"  [Видача]   {updated1.Id} [{updated1.Sku}] {updated1.Name,-26} — залишок після видачі (-7): {updated1.Quantity} {updated1.Unit}");
+
+service.Issue(item2.Id, 3);
+updated2 = service.Find(item2.Id)!;
+Console.WriteLine($"  [Видача]   {updated2.Id} [{updated2.Sku}] {updated2.Name,-26} — залишок після видачі (-3): {updated2.Quantity} {updated2.Unit}");
+
+service.Issue(item4.Id, 20);
+var updated4 = service.Find(item4.Id)!;
+Console.WriteLine($"  [Видача]   {updated4.Id} [{updated4.Sku}] {updated3.Name,-26} — залишок після видачі (-20): {updated4.Quantity} {updated4.Unit}");
+Console.WriteLine();
+
+Console.WriteLine("— 4. Пошук (Find) та видалення позиції (Delete) —");
+var found = service.Find(item3.Id);
+Console.WriteLine($"  [Знайдено] {found?.Id} [{found?.Sku}] {found?.Name} (наявність: {found?.Quantity} {found?.Unit})");
+
+bool isDeleted = service.Delete(item4.Id);
+Console.WriteLine($"  [Видалено] ID {item4.Id}: результат операції = {isDeleted}");
+
+var checkDeleted = service.Find(item4.Id);
+Console.WriteLine($"  [Перевірка видалення] Пошук за ID {item4.Id} повертає null: {checkDeleted is null}");
+Console.WriteLine();
+
+// 2. ПЕРЕГЛЯД ПОВНОГО СПИСКУ КАТАЛОГУ (All / List)
+Console.WriteLine($"— Список усіх позицій каталогу ({service.All().Count} поз.) —");
+Console.WriteLine($"  {"ID",-8} {"SKU",-10} {"Назва",-28} {"К-сть",5} {"Од."}");
+Console.WriteLine("  " + new string('-', 58));
+foreach (var p in service.All().Take(10))
+{
+    Console.WriteLine($"  {p.Id,-8} {p.Sku,-10} {p.Name,-28} {p.Quantity,5} {p.Unit}");
+}
+if (service.All().Count > 10)
+{
+    Console.WriteLine($"  ... та ще {service.All().Count - 10} позицій");
+}
+Console.WriteLine();
+
+// 3. СЦЕНАРІЇ ВІДМОВИ, ІНВАРІАНТИ ТА ОБРОБКА ПОМИЛОК
+Console.WriteLine("— Перевірка інваріантів та обробки помилок —");
+
+// Помилки сховища (ICatalogStore)
+TryDo("Додавання дубліката ID напряму в сховище", () => store.Add(item1));
+TryDo("Прихід на неіснуючий ID у сервісі", () => service.Receive("NON-EXISTENT", 10));
+TryDo("Списання з неіснуючого ID у сервісі", () => service.Issue("UNKNOWN-ID", 5));
+TryDo("Оновлення неіснуючого товару напряму в сховищі", () => store.Update(Product.Create("GHOST", "SKU-GHOST", "Привид", "шт", 1)));
+
+// Інваріанти доменної сутності Product
+TryDo("Видача більшої кількості за залишок на складі", () => service.Issue(item1.Id, 1000));
+TryDo("Прихід з нульовою кількістю товару", () => service.Receive(item1.Id, 0));
+TryDo("Списання з від'ємною кількістю товару", () => service.Issue(item1.Id, -15));
+TryDo("Створення товару з порожнім SKU через сервіс", () => service.Add("", "Лопата", "шт", 10));
+TryDo("Створення товару з порожньою назвою через сервіс", () => service.Add("SKU-999", "", "шт", 10));
+TryDo("Створення товару з від'ємною початковою кількістю", () => service.Add("SKU-999", "Ґрунт", "міш", -20));
 
 return 0;
 
@@ -84,7 +113,7 @@ static void TryDo(string title, Action action)
     try
     {
         action();
-        Console.WriteLine($"  {title}: виняток НЕ спрацював — інваріант відсутній!");
+        Console.WriteLine($"  {title}: виняток НЕ спрацював!");
     }
     catch (Exception ex)
     {

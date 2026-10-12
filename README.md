@@ -148,3 +148,19 @@ TargetFrameworks: net8.0; net10.0, з умовним визначенням ве
 
 3. Стан-перелічування та switch expression для переходів  
 Створено сутність `ShipmentOrder` з `enum ShipmentStatus` (`Draft`, `Confirmed`, `Cancelled`). Допустимість змін станів валідується через `switch expression` над кортежем `(Status, newStatus)`; невалідні переходи блокуються винятком `InvalidOperationException`.
+
+
+## Лабораторна робота 5. Сервісний шар: інтерфейси, два сховища, ручний DI
+
+1. Абстракція сховища:
+- Визначено інтерфейс `ICatalogStore` у просторі імен `Core.Abstractions` (`List`, `GetById`, `Add`, `Update`, `Remove`).
+- Інтерфейс оперує доменними типами `Product` та повертає `IReadOnlyList<Product>`.
+
+2. Реалізації сховища:
+- `InMemoryCatalogStore`: базується на `Dictionary<string, Product>` із нечутливим до регістру порівнянням `OrdinalIgnoreCase` та опційними даними `SampleData`.
+- `FileCatalogStore`: зберігає дані у форматі JSON за допомогою DTO-прошарку (`ProductDto`), реалізує відкладене завантаження кешу (`EnsureLoaded`) та миттєве скидання змін на диск (`Flush`).
+
+3. Сервісний шар та DI:
+- Створено `CatalogService`, який інкапсулює бізнес-операції над товарами (`Add`, `Receive`, `Issue`, `Find`, `All`).
+- Сервіс залежить виключно від інтерфейсу `ICatalogStore`, переданого через первинний конструктор (Dependency Inversion).
+- Точка входу `Program.cs` виступає як Composition Root, де за наявності аргументу `--file` підключається `FileCatalogStore`, інакше — `InMemoryCatalogStore`. Зовнішній DI-контейнер не використовується.
