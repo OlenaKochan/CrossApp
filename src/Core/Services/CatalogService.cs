@@ -1,6 +1,7 @@
 using Core.Abstractions;
 using Core.Domain;
 using Core.Events;
+using Core.Dto;
 
 namespace Core.Services;
 
@@ -70,5 +71,31 @@ public sealed class CatalogService(ICatalogStore store)
     {
         ArgumentNullException.ThrowIfNull(predicate);
         return _store.List().Where(predicate).ToList();
+    }
+
+    // Додаткове завдання 2: імпорт із делегатом Action<string> для сповіщення про помилкові рядки
+    public int Import(IEnumerable<ProductDto> dtos, Action<string>? onWarning = null)
+    {
+        ArgumentNullException.ThrowIfNull(dtos);
+
+        int importedCount = 0;
+        foreach (var dto in dtos)
+        {
+            try
+            {
+                // Спроба відновити сутність і перевірити її інваріанти
+                var product = Product.FromDto(dto);
+                _store.Add(product);
+                OnChanged(product, CatalogChangeKind.Added, product.Quantity);
+                importedCount++;
+            }
+            catch (Exception ex)
+            {
+                // Замість падіння програми викликаємо Action<string>, якщо підписник його передав
+                onWarning?.Invoke($"Пропущено рядок [ID: {dto.Id}, SKU: {dto.Sku}]: {ex.Message}");
+            }
+        }
+
+        return importedCount;
     }
 }

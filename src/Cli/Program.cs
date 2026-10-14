@@ -2,6 +2,8 @@
 using Core.Abstractions;
 using Core.Domain;
 using Core.Events;
+using Core.Notifications;
+using Core.Dto;
 using Core.Services;
 using Core.Storage;
 
@@ -114,7 +116,6 @@ foreach (var p in lowStock.Take(4))
 {
     Console.WriteLine($"   * [{p.Sku}] {p.Name,-25} : {p.Quantity,3} {p.Unit}");
 }
-
 // Фільтр 2: Пошук саджанців
 var saplings = service.FindAll(p => p.Name.Contains("Саджанець", StringComparison.OrdinalIgnoreCase));
 Console.WriteLine($"\n2. Категорія 'Саджанці' (знайдено {saplings.Count}):");
@@ -122,8 +123,38 @@ foreach (var p in saplings.Take(4))
 {
     Console.WriteLine($"   * [{p.Sku}] {p.Name,-25} : {p.Quantity,3} {p.Unit}");
 }
+Console.WriteLine("");
+
+
+Console.WriteLine("— Додаткове завдання 1: альтернатива подіям через INotificationSink —");
+INotificationSink consoleSink = new ConsoleSink();
+INotificationSink fileSink = new FileSink(Path.Combine(AppContext.BaseDirectory, "logs", "sink.log"));
+
+var testEvent = new CatalogChangedEventArgs("SNK-01", CatalogChangeKind.Added, 30, 30);
+consoleSink.Notify(testEvent);
+fileSink.Notify(testEvent);
+Console.WriteLine("  Сповіщення через Sink успішно надіслано в консоль та у файл logs/sink.log\n");
+
+// ДОДАТКОВЕ ЗАВДАННЯ 2: Імпорт із делегатом Action<string> для звіту про пропущені рядки
+Console.WriteLine("— Додаткове завдання 2: використання Action<string> під час імпорту —");
+List<ProductDto> batch =
+[
+    new("B-01", "SKU-B01", "Лопата штикова мала", "шт", 15, null),
+    new("B-02", "", "Товар без артикулу (помилка)", "шт", 10, null),   // порожній SKU
+    new("B-03", "SKU-B03", "Граблі віялові 22 зуби", "шт", 20, null),
+    new("B-04", "SKU-B04", "Від'ємний залишок (помилка)", "шт", -5, null) // від'ємна кількість
+];
+
+int imported = service.Import(batch, warning =>
+{
+    Console.WriteLine($"  [Увага / Action Callback] -> {warning}");
+});
+
+Console.WriteLine($"Успішно імпортовано коректних позицій: {imported} із {batch.Count}\n");
 
 return 0;
+
+
 
 static void TryDo(string title, Action action)
 {
