@@ -1,10 +1,11 @@
 ﻿using Core;
 using Core.Abstractions;
 using Core.Domain;
+using Core.Events;
 using Core.Services;
 using Core.Storage;
 
-// Composition Root: єдине місце вибору конкретних класів[cite: 16, 19]
+// 1. Ініціалізація сховища (ручний DI з ЛР5)
 bool useFile = args.Contains("--file");
 string dataPath = Path.Combine(AppContext.BaseDirectory, "data", "catalog.json");
 
@@ -13,98 +14,114 @@ ICatalogStore store = useFile
     : new InMemoryCatalogStore(SampleData.Products());
 
 var service = new CatalogService(store);
+Console.WriteLine($"Сховище: {store.GetType().Name}\n");
 
-Console.WriteLine($"Сховище: {store.GetType().Name}");
-if (useFile)
+// 2. Налаштування файлу logs/app.log
+var logPath = Path.Combine(AppContext.BaseDirectory, "logs", "app.log");
+Directory.CreateDirectory(Path.GetDirectoryName(logPath)!);
+
+// ПІДПИСНИК 1: іменований локальний метод (вивід у консоль + запис у logs/app.log)
+void OnCatalogChanged(object? sender, CatalogChangedEventArgs e)
 {
-    Console.WriteLine($"Шлях до файлу: {dataPath}");
+    var line = $"{e.At:HH:mm:ss} {e.Kind,-8} {e.Id} {e.Delta,4:+0;-0} залишок {e.QuantityAfter}";
+    Console.WriteLine($"  [Log Handler] {line}");
+    File.AppendAllText(logPath, line + Environment.NewLine);
 }
-Console.WriteLine();
 
-// 1. ДЕМОНСТРАЦІЯ БІЗНЕС-ОПЕРАЦІЙ СЕРВІСУ (Add, Receive, Issue, Find, Delete)
-Console.WriteLine("— 1. Операції сервісу: додавання товарів (Add) —");
-var item1 = service.Add("SKU-901", "Капельна стрічка 100м", "бухт", 10, "Новинка");
-Console.WriteLine($"  [Додано]   {item1.Id} [{item1.Sku}] {item1.Name,-26} — {item1.Quantity,3} {item1.Unit}");
+// ПІДПИСНИК 2: лямбда-вираз із замиканням (closure) над локальним лічильником
+int changesCount = 0;
+EventHandler<CatalogChangedEventArgs> counterHandler = (sender, e) => changesCount++;
 
-var item2 = service.Add("SKU-902", "Саджанець Магнолії", "шт", 5, "Декоративні");
-Console.WriteLine($"  [Додано]   {item2.Id} [{item2.Sku}] {item2.Name,-26} — {item2.Quantity,3} {item2.Unit}");
+// Підписка двох обробників
+service.Changed += OnCatalogChanged;
+service.Changed += counterHandler;
 
-var item3 = service.Add("SKU-903", "Система туманоутворення", "компл", 8);
-Console.WriteLine($"  [Додано]   {item3.Id} [{item3.Sku}] {item3.Name,-26} — {item3.Quantity,3} {item3.Unit}");
+// 3. Сценарій: операції з активними підписниками
+// Створення об'єктів (Add)
+Console.WriteLine("- Створення та реєстрація нових товарів - ");
+var item1 = service.Add("SKU-101", "Кабель UTP cat6", "м", 50);
+Console.WriteLine($"   Створено об'єкт: [ID: {item1.Id}] [{item1.Sku}] \"{item1.Name}\" — {item1.Quantity} {item1.Unit}");
 
-var item4 = service.Add("SKU-904", "Горщик торф'яний 80мм", "уп", 50);
-Console.WriteLine($"  [Додано]   {item4.Id} [{item4.Sku}] {item4.Name,-26} — {item4.Quantity,3} {item4.Unit}");
-Console.WriteLine();
+var item2 = service.Add("SKU-102", "Секатор садовий Pro", "шт", 20, "Німеччина");
+Console.WriteLine($"   Створено об'єкт: [ID: {item2.Id}] [{item2.Sku}] \"{item2.Name}\" — {item2.Quantity} {item2.Unit}");
 
-Console.WriteLine("— 2. Операції надходження товару на склад (Receive) —");
-service.Receive(item1.Id, 15);
+var item3 = service.Add("SKU-103", "Шланг для поливу 25м", "бухт", 15);
+Console.WriteLine($"   Створено об'єкт: [ID: {item3.Id}] [{item3.Sku}] \"{item3.Name}\" — {item3.Quantity} {item3.Unit}\n");
+
+// Надходження на склад (Receive)
+Console.WriteLine("- Реєстрація надходжень на склад - ");
+service.Receive(item1.Id, 25);
 var updated1 = service.Find(item1.Id)!;
-Console.WriteLine($"  [Прихід]   {updated1.Id} [{updated1.Sku}] {updated1.Name,-26} — новий залишок (+15): {updated1.Quantity} {updated1.Unit}");
+Console.WriteLine($"   Прихід на об'єкт: [{updated1.Sku}] \"{updated1.Name}\" (+25) — новий залишок: {updated1.Quantity} {updated1.Unit}");
 
 service.Receive(item2.Id, 10);
 var updated2 = service.Find(item2.Id)!;
-Console.WriteLine($"  [Прихід]   {updated2.Id} [{updated2.Sku}] {updated2.Name,-26} — новий залишок (+10): {updated2.Quantity} {updated2.Unit}");
+Console.WriteLine($"   Прихід на об'єкт: [{updated2.Sku}] \"{updated2.Name}\" (+10) — новий залишок: {updated2.Quantity} {updated2.Unit}\n");
 
-service.Receive(item3.Id, 4);
-var updated3 = service.Find(item3.Id)!;
-Console.WriteLine($"  [Прихід]   {updated3.Id} [{updated3.Sku}] {updated3.Name,-26} — новий залишок (+4):  {updated3.Quantity} {updated3.Unit}");
-Console.WriteLine();
 
-Console.WriteLine("— 3. Операції видачі товару зі складу (Issue) —");
-service.Issue(item1.Id, 7);
+// Видача зі складу (Issue)
+Console.WriteLine("- Реєстрація видачі зі складу - ");
+service.Issue(item1.Id, 15);
 updated1 = service.Find(item1.Id)!;
-Console.WriteLine($"  [Видача]   {updated1.Id} [{updated1.Sku}] {updated1.Name,-26} — залишок після видачі (-7): {updated1.Quantity} {updated1.Unit}");
+Console.WriteLine($"   Видача з об'єкта: [{updated1.Sku}] \"{updated1.Name}\" (-15) — залишок: {updated1.Quantity} {updated1.Unit}");
 
-service.Issue(item2.Id, 3);
+service.Issue(item2.Id, 8);
 updated2 = service.Find(item2.Id)!;
-Console.WriteLine($"  [Видача]   {updated2.Id} [{updated2.Sku}] {updated2.Name,-26} — залишок після видачі (-3): {updated2.Quantity} {updated2.Unit}");
+Console.WriteLine($"   Видача з об'єкта: [{updated2.Sku}] \"{updated2.Name}\" (-8) — залишок: {updated2.Quantity} {updated2.Unit}\n");
 
-service.Issue(item4.Id, 20);
-var updated4 = service.Find(item4.Id)!;
-Console.WriteLine($"  [Видача]   {updated4.Id} [{updated4.Sku}] {updated3.Name,-26} — залишок після видачі (-20): {updated4.Quantity} {updated4.Unit}");
-Console.WriteLine();
+// Пошук (Find) та видалення (Delete)
+Console.WriteLine("- Пошук (Find) та видалення товарів - ");
+var foundItem = service.Find(item2.Id);
+Console.WriteLine($"   Знайдено товар за ID {item2.Id}: [{foundItem?.Sku}] \"{foundItem?.Name}\" ({foundItem?.Quantity} {foundItem?.Unit})");
 
-Console.WriteLine("— 4. Пошук (Find) та видалення позиції (Delete) —");
-var found = service.Find(item3.Id);
-Console.WriteLine($"  [Знайдено] {found?.Id} [{found?.Sku}] {found?.Name} (наявність: {found?.Quantity} {found?.Unit})");
+bool isDeleted = service.Delete(item3.Id);
+Console.WriteLine($"   Об'єкт [ID: {item3.Id}] видалено успішно: {isDeleted}");
 
-bool isDeleted = service.Delete(item4.Id);
-Console.WriteLine($"  [Видалено] ID {item4.Id}: результат операції = {isDeleted}");
+Console.WriteLine($"Подій отримано лічильником: {changesCount}\n");
 
-var checkDeleted = service.Find(item4.Id);
-Console.WriteLine($"  [Перевірка видалення] Пошук за ID {item4.Id} повертає null: {checkDeleted is null}");
-Console.WriteLine();
+// 4. Демонстрація відписки (-=)
+Console.WriteLine("— Відписка першого обробника (service.Changed -= OnCatalogChanged) —");
+service.Changed -= OnCatalogChanged;
 
-// 2. ПЕРЕГЛЯД ПОВНОГО СПИСКУ КАТАЛОГУ (All / List)
-Console.WriteLine($"— Список усіх позицій каталогу ({service.All().Count} поз.) —");
-Console.WriteLine($"  {"ID",-8} {"SKU",-10} {"Назва",-28} {"К-сть",5} {"Од."}");
-Console.WriteLine("  " + new string('-', 58));
-foreach (var p in service.All().Take(10))
+// Тихі операції: події продовжують підніматися, лічильник їх фіксує, але лог мовчить
+service.Receive(item1.Id, 5);
+updated1 = service.Find(item1.Id)!;
+Console.WriteLine($"   Тихий прихід на об'єкт [{updated1.Sku}] \"{updated1.Name}\" (+5) — залишок: {updated1.Quantity} {updated1.Unit}");
+
+service.Issue(item2.Id, 2);
+updated2 = service.Find(item2.Id)!;
+Console.WriteLine($"   Тиха видача з об'єкта [{updated2.Sku}] \"{updated2.Name}\" (-2) — залишок: {updated2.Quantity} {updated2.Unit}");
+
+Console.WriteLine($"Подій отримано лічильником: {changesCount} (+2 від лямбди)\n");
+
+// 5. Сценарій відмови: операція кидає виняток, подія НЕ викликається
+Console.WriteLine("— Сценарій відмови: перевірка, що виняток не породжує подію —");
+int countBeforeFailure = changesCount;
+
+TryDo("Спроба видачі кількості, більшої за залишок", () => service.Issue(item1.Id, 998));
+TryDo("Спроба приходу з від'ємною кількістю", () => service.Receive(item1.Id, -20));
+TryDo("Спроба приходу на неіснуючий ідентифікатор", () => service.Receive("NON-EXISTENT-ID", 10));
+
+Console.WriteLine($"Кількість подій до помилок: {countBeforeFailure}, після: {changesCount}\n");
+
+// 6. Використання делегата Func там, де потрібне значення-результат
+Console.WriteLine("— Фільтрація каталогу —");
+
+// Фільтр 1: Товари із залишком менше 20 од.
+var lowStock = service.FindAll(p => p.Quantity < 20);
+Console.WriteLine($"1. Товари із залишком менше 20 од. (знайдено {lowStock.Count}):");
+foreach (var p in lowStock.Take(4))
 {
-    Console.WriteLine($"  {p.Id,-8} {p.Sku,-10} {p.Name,-28} {p.Quantity,5} {p.Unit}");
+    Console.WriteLine($"   * [{p.Sku}] {p.Name,-25} : {p.Quantity,3} {p.Unit}");
 }
-if (service.All().Count > 10)
+
+// Фільтр 2: Пошук саджанців
+var saplings = service.FindAll(p => p.Name.Contains("Саджанець", StringComparison.OrdinalIgnoreCase));
+Console.WriteLine($"\n2. Категорія 'Саджанці' (знайдено {saplings.Count}):");
+foreach (var p in saplings.Take(4))
 {
-    Console.WriteLine($"  ... та ще {service.All().Count - 10} позицій");
+    Console.WriteLine($"   * [{p.Sku}] {p.Name,-25} : {p.Quantity,3} {p.Unit}");
 }
-Console.WriteLine();
-
-// 3. СЦЕНАРІЇ ВІДМОВИ, ІНВАРІАНТИ ТА ОБРОБКА ПОМИЛОК
-Console.WriteLine("— Перевірка інваріантів та обробки помилок —");
-
-// Помилки сховища (ICatalogStore)
-TryDo("Додавання дубліката ID напряму в сховище", () => store.Add(item1));
-TryDo("Прихід на неіснуючий ID у сервісі", () => service.Receive("NON-EXISTENT", 10));
-TryDo("Списання з неіснуючого ID у сервісі", () => service.Issue("UNKNOWN-ID", 5));
-TryDo("Оновлення неіснуючого товару напряму в сховищі", () => store.Update(Product.Create("GHOST", "SKU-GHOST", "Привид", "шт", 1)));
-
-// Інваріанти доменної сутності Product
-TryDo("Видача більшої кількості за залишок на складі", () => service.Issue(item1.Id, 1000));
-TryDo("Прихід з нульовою кількістю товару", () => service.Receive(item1.Id, 0));
-TryDo("Списання з від'ємною кількістю товару", () => service.Issue(item1.Id, -15));
-TryDo("Створення товару з порожнім SKU через сервіс", () => service.Add("", "Лопата", "шт", 10));
-TryDo("Створення товару з порожньою назвою через сервіс", () => service.Add("SKU-999", "", "шт", 10));
-TryDo("Створення товару з від'ємною початковою кількістю", () => service.Add("SKU-999", "Ґрунт", "міш", -20));
 
 return 0;
 
@@ -113,10 +130,10 @@ static void TryDo(string title, Action action)
     try
     {
         action();
-        Console.WriteLine($"  {title}: виняток НЕ спрацював!");
+        Console.WriteLine($"   {title}: виняток НЕ спрацював!");
     }
     catch (Exception ex)
     {
-        Console.WriteLine($"  {title}: {ex.GetType().Name} — {ex.Message}");
+        Console.WriteLine($"   {title}: перехоплено {ex.GetType().Name} — {ex.Message}");
     }
 }

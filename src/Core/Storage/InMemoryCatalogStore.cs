@@ -26,4 +26,10 @@ public sealed class InMemoryCatalogStore(IEnumerable<Product>? seed = null) : IC
     }
 
     public bool Remove(string id) => _items.Remove(id);
+
+    public IReadOnlyList<Product> Find(Func<Product, bool> predicate)
+    {
+        ArgumentNullException.ThrowIfNull(predicate);
+        return _items.Values.Where(predicate).ToList();
+    }
 }

@@ -164,3 +164,8 @@ TargetFrameworks: net8.0; net10.0, з умовним визначенням ве
 - Створено `CatalogService`, який інкапсулює бізнес-операції над товарами (`Add`, `Receive`, `Issue`, `Find`, `All`).
 - Сервіс залежить виключно від інтерфейсу `ICatalogStore`, переданого через первинний конструктор (Dependency Inversion).
 - Точка входу `Program.cs` виступає як Composition Root, де за наявності аргументу `--file` підключається `FileCatalogStore`, інакше — `InMemoryCatalogStore`. Зовнішній DI-контейнер не використовується.
+
+### Додаткові завдання лабораторна 5
+1. Декоратор `CachingCatalogStore`: реалізує `ICatalogStore`, приймає інше сховище в конструкторі, утримує кеш читання в пам'яті та транслює зміни у внутрішнє сховище.
+2. Пошук за предикатом: додано метод `Find(Func<Product, bool> predicate)` у контракт `ICatalogStore` та його реалізації, а також метод `Query` у `CatalogService`.
+3. Фабрика `StoreFactory`: реалізовано метод `StoreFactory.Create(args, seed)`, що інкапсулює вибір базового сховища (`InMemory` / `File`) та підключення декоратора кешування (`--cached`).

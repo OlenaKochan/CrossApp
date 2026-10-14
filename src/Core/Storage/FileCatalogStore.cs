@@ -15,7 +15,6 @@ public sealed class FileCatalogStore(string path) : ICatalogStore
     private void EnsureLoaded()
     {
         if (_loaded) return;
-
         if (File.Exists(_path))
         {
             var json = File.ReadAllText(_path);
@@ -26,10 +25,8 @@ public sealed class FileCatalogStore(string path) : ICatalogStore
                 _cache[product.Id] = product;
             }
         }
-
         _loaded = true;
     }
-
     private void Flush()
     {
         Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
@@ -80,5 +77,12 @@ public sealed class FileCatalogStore(string path) : ICatalogStore
 
         Flush();
         return true;
+    }
+
+    public IReadOnlyList<Product> Find(Func<Product, bool> predicate)
+    {
+        ArgumentNullException.ThrowIfNull(predicate);
+        EnsureLoaded();
+        return _cache.Values.Where(predicate).ToList();
     }
 }

@@ -1,5 +1,6 @@
 using Core.Abstractions;
 using Core.Domain;
+using Core.Events;
 
 namespace Core.Services;
 
@@ -7,12 +8,20 @@ public sealed class CatalogService(ICatalogStore store)
 {
     private readonly ICatalogStore _store = store ?? throw new ArgumentNullException(nameof(store));
 
+    // Оголошення події згідно з конвенціями .NET
+    public event EventHandler<CatalogChangedEventArgs>? Changed;
+    // Приватний метод підняття події
+    private void OnChanged(Product product, CatalogChangeKind kind, int delta) =>
+        Changed?.Invoke(this, new CatalogChangedEventArgs(product.Id, kind, delta, product.Quantity));
+
     public Product Add(string sku, string name, string unit, int quantity, string? note = null)
     {
-        // Коротка генерація ID на 8 символів без дефісів
         string id = Guid.NewGuid().ToString("N")[..8];
         var product = Product.Create(id, sku, name, unit, quantity, note);
         _store.Add(product);
+
+        // Подія піднімається ПІСЛЯ успішного збереження
+        OnChanged(product, CatalogChangeKind.Added, quantity);
         return product;
     }
 
@@ -23,6 +32,9 @@ public sealed class CatalogService(ICatalogStore store)
 
         product.RegisterArrival(quantity);
         _store.Update(product);
+        
+        // Якщо RegisterArrival кине виняток, рядок нижче не виконається
+        OnChanged(product, CatalogChangeKind.Received, quantity);
     }
 
     public void Issue(string id, int quantity)
@@ -32,11 +44,31 @@ public sealed class CatalogService(ICatalogStore store)
 
         product.Issue(quantity);
         _store.Update(product);
+
+        OnChanged(product, CatalogChangeKind.Issued, -quantity);
     }
 
-    public bool Delete(string id) => _store.Remove(id);
+    public bool Delete(string id)
+    {
+        var product = _store.GetById(id);
+        if (product is null) return false;
+
+        bool removed = _store.Remove(id);
+        if (removed)
+        {
+            OnChanged(product, CatalogChangeKind.Removed, -product.Quantity);
+        }
+        return removed;
+    }
 
     public IReadOnlyList<Product> All() => _store.List();
 
     public Product? Find(string id) => _store.GetById(id);
+
+    // Використання делегата Func там, де потрібне значення (вибірка за критерієм)
+    public IReadOnlyList<Product> FindAll(Func<Product, bool> predicate)
+    {
+        ArgumentNullException.ThrowIfNull(predicate);
+        return _store.List().Where(predicate).ToList();
+    }
 }
