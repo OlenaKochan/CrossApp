@@ -224,3 +224,20 @@ TargetFrameworks: net8.0; net10.0, з умовним визначенням ве
 
 - **Демонстрація відкладеного виконання:**
   ```dotnet run --project src/Cli -- demo-deferred ```
+
+### Додаткові завдання 
+
+1. **Join та GroupJoin:** Реалізовано з'єднання товарів із переміщеннями `StockMovement` через `.Join()` та `.GroupJoin()` з проєкцією у DTO `ProductMovementLine` і `ProductWithMovementsSummary`.
+2. **Метод-розширення TopBy:** У `ReportExtensions.cs` додано узагальнений метод `TopBy<T, TKey>`, який інкапсулює сортування за спаданням та вибірку $N$ елементів.
+3. **Query Syntax:** Метод `ByUnitQuerySyntax` реалізує групування через декларативний синтаксис (`from ... group ... into`). На відміну від ланцюжків методів, він зручніший для SQL-подібних операцій групування та об'єднання.
+4. **Бенчмарк (Stopwatch):** Тестування на 100 000 записах підтвердило, що проміжний `.ToList()` створює зайву буферизацію в пам'яті та сповільнює виконання порівняно з чистим відкладеним LINQ-пайплайном.
+
+#### Команди перевірки додаткових завдань:
+ - Перевірка Join та GroupJoin :
+```dotnet run --project src/Cli -- bonus-join```
+
+-  Перевірка Query Syntax :
+```dotnet run --project src/Cli -- bonus-query-syntax```
+
+- Перевірка продуктивності (Stopwatch) :
+```dotnet run --project src/Cli -- bonus-benchmark```

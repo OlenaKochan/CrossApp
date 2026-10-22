@@ -36,4 +36,43 @@ public static class ReportService
                list.Average(p => p.Quantity), 
                list.Max(p => p.Quantity));
     }
+    
+    // 5)  Додаткове завдання 1: JOIN з'єднання товарів із переміщеннями (виводить усі факти переміщень)
+    public static IReadOnlyList<ProductMovementLine> GetProductMovements(
+        IEnumerable<Product> products, 
+        IEnumerable<StockMovement> movements) =>
+        products.Join(
+            movements,
+            p => p.Id,
+            m => m.ProductId,
+            (p, m) => new ProductMovementLine(p.Sku, p.Name, m.Delta, m.OperationType)
+        ).ToList();
+
+    // 6)  Додаткове завдання 1: GROUP JOIN з'єднання згрупованих переміщень до товарів (враховує товари навіть без переміщень)
+    public static IReadOnlyList<ProductWithMovementsSummary> GetProductsWithGroupedMovements(
+        IEnumerable<Product> products, 
+        IEnumerable<StockMovement> movements) =>
+        products.GroupJoin(
+            movements,
+            p => p.Id,
+            m => m.ProductId,
+            (p, mGroup) => new ProductWithMovementsSummary(
+                p.Sku, 
+                p.Name, 
+                mGroup.Count(), 
+                mGroup.Sum(m => m.Delta)
+            )
+        ).ToList();
+
+    // 7) Додаткове завдання 3: Групування через Query Syntax
+    public static IReadOnlyList<GroupSummary> ByUnitQuerySyntax(IEnumerable<Product> source)
+    {
+        var query = from p in source
+                    group p by p.Unit into g
+                    orderby g.Sum(x => x.Quantity) descending
+                    select new GroupSummary(g.Key, g.Count(), g.Sum(x => x.Quantity));
+        
+        return query.ToList();
+    }
 }
+
