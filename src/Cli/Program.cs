@@ -1,9 +1,8 @@
 ﻿using Core;
 using Core.Abstractions;
 using Core.Domain;
-using Core.Events;
-using Core.Notifications;
 using Core.Dto;
+using Core.Reports;
 using Core.Services;
 using Core.Storage;
 
@@ -18,153 +17,67 @@ ICatalogStore store = useFile
 var service = new CatalogService(store);
 Console.WriteLine($"Сховище: {store.GetType().Name}\n");
 
-// 2. Налаштування файлу logs/app.log
-var logPath = Path.Combine(AppContext.BaseDirectory, "logs", "app.log");
-Directory.CreateDirectory(Path.GetDirectoryName(logPath)!);
+var items = service.All();
 
-// ПІДПИСНИК 1: іменований локальний метод (вивід у консоль + запис у logs/app.log)
-void OnCatalogChanged(object? sender, CatalogChangedEventArgs e)
+// 2. Визначення підкоманди звіту (ігноруючи прапорці на зразок --file)
+var command = args.FirstOrDefault(a => !a.StartsWith("--")) ?? "report-top";
+
+switch (command)
 {
-    var line = $"{e.At:HH:mm:ss} {e.Kind,-8} {e.Id} {e.Delta,4:+0;-0} залишок {e.QuantityAfter}";
-    Console.WriteLine($"  [Log Handler] {line}");
-    File.AppendAllText(logPath, line + Environment.NewLine);
+    case "report-top":
+        Print(ReportService.TopByQuantity(items, 5));
+        break;
+
+    case "report-low":
+        Print(ReportService.LowStock(items, 10));
+        break;
+
+    case "report-groups":
+        foreach (var g in ReportService.ByUnit(items))
+        {
+            Console.WriteLine($"{g.Key,-6} | позицій: {g.Count,3} | сумарно: {g.TotalQuantity,6}");
+        }
+        break;
+
+    case "report-sum":
+        var t = ReportService.Totals(items);
+        Console.WriteLine($"Усього позицій: {t.Items}, всього од.: {t.Total}, середнє: {t.Average:F2}, макс: {t.Max}");
+        break;
+
+    case "demo-deferred":
+        RunDeferredExecutionDemo();
+        break;
+
+    default:
+        Console.WriteLine("Доступні команди: report-top | report-low | report-groups | report-sum | demo-deferred");
+        break;
 }
-
-// ПІДПИСНИК 2: лямбда-вираз із замиканням (closure) над локальним лічильником
-int changesCount = 0;
-EventHandler<CatalogChangedEventArgs> counterHandler = (sender, e) => changesCount++;
-
-// Підписка двох обробників
-service.Changed += OnCatalogChanged;
-service.Changed += counterHandler;
-
-// 3. Сценарій: операції з активними підписниками
-// Створення об'єктів (Add)
-Console.WriteLine("- Створення та реєстрація нових товарів - ");
-var item1 = service.Add("SKU-101", "Кабель UTP cat6", "м", 50);
-Console.WriteLine($"   Створено об'єкт: [ID: {item1.Id}] [{item1.Sku}] \"{item1.Name}\" — {item1.Quantity} {item1.Unit}");
-
-var item2 = service.Add("SKU-102", "Секатор садовий Pro", "шт", 20, "Німеччина");
-Console.WriteLine($"   Створено об'єкт: [ID: {item2.Id}] [{item2.Sku}] \"{item2.Name}\" — {item2.Quantity} {item2.Unit}");
-
-var item3 = service.Add("SKU-103", "Шланг для поливу 25м", "бухт", 15);
-Console.WriteLine($"   Створено об'єкт: [ID: {item3.Id}] [{item3.Sku}] \"{item3.Name}\" — {item3.Quantity} {item3.Unit}\n");
-
-// Надходження на склад (Receive)
-Console.WriteLine("- Реєстрація надходжень на склад - ");
-service.Receive(item1.Id, 25);
-var updated1 = service.Find(item1.Id)!;
-Console.WriteLine($"   Прихід на об'єкт: [{updated1.Sku}] \"{updated1.Name}\" (+25) — новий залишок: {updated1.Quantity} {updated1.Unit}");
-
-service.Receive(item2.Id, 10);
-var updated2 = service.Find(item2.Id)!;
-Console.WriteLine($"   Прихід на об'єкт: [{updated2.Sku}] \"{updated2.Name}\" (+10) — новий залишок: {updated2.Quantity} {updated2.Unit}\n");
-
-
-// Видача зі складу (Issue)
-Console.WriteLine("- Реєстрація видачі зі складу - ");
-service.Issue(item1.Id, 15);
-updated1 = service.Find(item1.Id)!;
-Console.WriteLine($"   Видача з об'єкта: [{updated1.Sku}] \"{updated1.Name}\" (-15) — залишок: {updated1.Quantity} {updated1.Unit}");
-
-service.Issue(item2.Id, 8);
-updated2 = service.Find(item2.Id)!;
-Console.WriteLine($"   Видача з об'єкта: [{updated2.Sku}] \"{updated2.Name}\" (-8) — залишок: {updated2.Quantity} {updated2.Unit}\n");
-
-// Пошук (Find) та видалення (Delete)
-Console.WriteLine("- Пошук (Find) та видалення товарів - ");
-var foundItem = service.Find(item2.Id);
-Console.WriteLine($"   Знайдено товар за ID {item2.Id}: [{foundItem?.Sku}] \"{foundItem?.Name}\" ({foundItem?.Quantity} {foundItem?.Unit})");
-
-bool isDeleted = service.Delete(item3.Id);
-Console.WriteLine($"   Об'єкт [ID: {item3.Id}] видалено успішно: {isDeleted}");
-
-Console.WriteLine($"Подій отримано лічильником: {changesCount}\n");
-
-// 4. Демонстрація відписки (-=)
-Console.WriteLine("— Відписка першого обробника (service.Changed -= OnCatalogChanged) —");
-service.Changed -= OnCatalogChanged;
-
-// Тихі операції: події продовжують підніматися, лічильник їх фіксує, але лог мовчить
-service.Receive(item1.Id, 5);
-updated1 = service.Find(item1.Id)!;
-Console.WriteLine($"   Тихий прихід на об'єкт [{updated1.Sku}] \"{updated1.Name}\" (+5) — залишок: {updated1.Quantity} {updated1.Unit}");
-
-service.Issue(item2.Id, 2);
-updated2 = service.Find(item2.Id)!;
-Console.WriteLine($"   Тиха видача з об'єкта [{updated2.Sku}] \"{updated2.Name}\" (-2) — залишок: {updated2.Quantity} {updated2.Unit}");
-
-Console.WriteLine($"Подій отримано лічильником: {changesCount} (+2 від лямбди)\n");
-
-// 5. Сценарій відмови: операція кидає виняток, подія НЕ викликається
-Console.WriteLine("— Сценарій відмови: перевірка, що виняток не породжує подію —");
-int countBeforeFailure = changesCount;
-
-TryDo("Спроба видачі кількості, більшої за залишок", () => service.Issue(item1.Id, 998));
-TryDo("Спроба приходу з від'ємною кількістю", () => service.Receive(item1.Id, -20));
-TryDo("Спроба приходу на неіснуючий ідентифікатор", () => service.Receive("NON-EXISTENT-ID", 10));
-
-Console.WriteLine($"Кількість подій до помилок: {countBeforeFailure}, після: {changesCount}\n");
-
-// 6. Використання делегата Func там, де потрібне значення-результат
-Console.WriteLine("— Фільтрація каталогу —");
-
-// Фільтр 1: Товари із залишком менше 20 од.
-var lowStock = service.FindAll(p => p.Quantity < 20);
-Console.WriteLine($"1. Товари із залишком менше 20 од. (знайдено {lowStock.Count}):");
-foreach (var p in lowStock.Take(4))
-{
-    Console.WriteLine($"   * [{p.Sku}] {p.Name,-25} : {p.Quantity,3} {p.Unit}");
-}
-// Фільтр 2: Пошук саджанців
-var saplings = service.FindAll(p => p.Name.Contains("Саджанець", StringComparison.OrdinalIgnoreCase));
-Console.WriteLine($"\n2. Категорія 'Саджанці' (знайдено {saplings.Count}):");
-foreach (var p in saplings.Take(4))
-{
-    Console.WriteLine($"   * [{p.Sku}] {p.Name,-25} : {p.Quantity,3} {p.Unit}");
-}
-Console.WriteLine("");
-
-
-Console.WriteLine("— Додаткове завдання 1: альтернатива подіям через INotificationSink —");
-INotificationSink consoleSink = new ConsoleSink();
-INotificationSink fileSink = new FileSink(Path.Combine(AppContext.BaseDirectory, "logs", "sink.log"));
-
-var testEvent = new CatalogChangedEventArgs("SNK-01", CatalogChangeKind.Added, 30, 30);
-consoleSink.Notify(testEvent);
-fileSink.Notify(testEvent);
-Console.WriteLine("  Сповіщення через Sink успішно надіслано в консоль та у файл logs/sink.log\n");
-
-// ДОДАТКОВЕ ЗАВДАННЯ 2: Імпорт із делегатом Action<string> для звіту про пропущені рядки
-Console.WriteLine("— Додаткове завдання 2: використання Action<string> під час імпорту —");
-List<ProductDto> batch =
-[
-    new("B-01", "SKU-B01", "Лопата штикова мала", "шт", 15, null),
-    new("B-02", "", "Товар без артикулу (помилка)", "шт", 10, null),   // порожній SKU
-    new("B-03", "SKU-B03", "Граблі віялові 22 зуби", "шт", 20, null),
-    new("B-04", "SKU-B04", "Від'ємний залишок (помилка)", "шт", -5, null) // від'ємна кількість
-];
-
-int imported = service.Import(batch, warning =>
-{
-    Console.WriteLine($"  [Увага / Action Callback] -> {warning}");
-});
-
-Console.WriteLine($"Успішно імпортовано коректних позицій: {imported} із {batch.Count}\n");
 
 return 0;
 
-
-
-static void TryDo(string title, Action action)
+static void Print(IReadOnlyList<StockLine> lines)
 {
-    try
+    foreach (var l in lines)
     {
-        action();
-        Console.WriteLine($"   {title}: виняток НЕ спрацював!");
+        Console.WriteLine($"{l.Sku,-10} | {l.Name,-22} | {l.Quantity,6} | {l.Unit}");
     }
-    catch (Exception ex)
-    {
-        Console.WriteLine($"   {title}: перехоплено {ex.GetType().Name} — {ex.Message}");
-    }
+}
+
+static void RunDeferredExecutionDemo()
+{
+    Console.WriteLine("— Демонстрація відкладеного виконання LINQ —");
+    var source = SampleData.Products().ToList();
+    var query = source.Where(p => p.Quantity < 10); // Запит побудовано, але не виконано
+
+    Console.WriteLine($"Дефіцитних до змін: {query.Count()}");
+    
+    // Змінюємо джерело після побудови запиту
+    source.Add(Product.Create("tmp00001", "SKU-999", "Скоба ремонтна", "шт", 3));
+    
+    Console.WriteLine($"Дефіцитних після змін: {query.Count()}"); // Число інше
+
+    var snapshot = query.ToList(); // Матеріалізація запиту
+    source.Clear();
+    
+    Console.WriteLine($"У знімку лишилось: {snapshot.Count}"); // Не змінюється
 }
