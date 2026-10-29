@@ -2,6 +2,7 @@ using Core.Abstractions;
 using Core.Domain;
 using Core.Events;
 using Core.Dto;
+using Core.Storage;
 
 namespace Core.Services;
 
@@ -98,4 +99,23 @@ public sealed class CatalogService(ICatalogStore store)
 
         return importedCount;
     }
+    public async Task<int> ImportAsync(ICatalogImporter importer, string path, CancellationToken ct = default)
+    {
+        var items = await importer.LoadAsync(path, ct);
+        var added = 0;
+        foreach (var item in items)
+        {
+            //await Task.Delay(1000, ct); // штучна затримка на 1 секунду для демонстрації
+            ct.ThrowIfCancellationRequested(); // Перевірка скасування
+
+            if (_store.GetById(item.Id) is not null) continue; // Ідемпотентність
+        
+            _store.Add(item);
+            OnChanged(item, CatalogChangeKind.Added, item.Quantity);
+            added++;
+        }
+        return added;
+    }
+
+    
 }
