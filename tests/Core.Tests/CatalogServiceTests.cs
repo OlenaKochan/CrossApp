@@ -17,6 +17,7 @@ namespace Core.Tests
             var p = service.Add("SKU-1", "Кабель", "м", 10);
 
             Assert.Throws<System.ArgumentOutOfRangeException>(() => service.Receive(p.Id, -5));
+            //Assert.Throws<DomainException>(() => service.Receive(p.Id, -5));
             Assert.Equal(10, store.GetById(p.Id)!.Quantity);
         }
 

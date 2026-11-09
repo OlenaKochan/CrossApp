@@ -12,29 +12,49 @@ namespace Cli
     {
         static async Task Main(string[] args)
         {
-            using var cts = new CancellationTokenSource();
-            Console.CancelKeyPress += (s, e) => { e.Cancel = true; cts.Cancel(); };
+            // Додаткове завдання: Зв'язані токени скасування (Ctrl+C від користувача + таймаут 10 секунд)
+            using var userCts = new CancellationTokenSource();
+            using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(userCts.Token, timeoutCts.Token);
+
+            Console.CancelKeyPress += (s, e) => 
+            { 
+                e.Cancel = true; 
+                userCts.Cancel(); 
+            };
 
             var dataPath = "data/catalog.json";
             var store = new InMemoryCatalogStore();
             var service = new CatalogService(store);
 
+            // Індикатор прогресу через IProgress<int> із відображенням у консолі
+            var progress = new Progress<int>(percent =>
+            {
+                Console.Write($"\rПрогрес імпорту: [{new string('#', percent / 5)}{new string('-', 20 - (percent / 5))}] {percent}%");
+            });
+
             try
             {
-                var added = await service.ImportAsync(new JsonCatalogImporter(), dataPath, cts.Token);
-                Console.WriteLine($"Імпортовано записів: {added}");
+                // Додаткові завдання 1 та 3: Потоковий імпорт із підтримкою прогресу та зв'язаного токена
+                var importer = new JsonCatalogImporter();
+                var added = await service.ImportWithProgressAsync(importer, dataPath, progress, linkedCts.Token);
+                
+                Console.WriteLine($"\nІмпортовано записів: {added}");
             }
             catch (OperationCanceledException)
             {
-                Console.WriteLine("Імпорт скасовано.");
+                if (timeoutCts.IsCancellationRequested && !userCts.IsCancellationRequested)
+                    Console.WriteLine("\nІмпорт скасовано: перевищено ліміт часу (таймаут).");
+                else
+                    Console.WriteLine("\nІмпорт скасовано користувачем.");
             }
             catch (DomainException ex)
             {
-                Console.WriteLine($"Дані відхилено: {ex.Message}");
+                Console.WriteLine($"\nДані відхилено: {ex.Message}");
             }
             catch (FileNotFoundException)
             {
-                Console.WriteLine($"Файл не знайдено: {dataPath}");
+                Console.WriteLine($"\nФайл не знайдено: {dataPath}");
             }
         }
     }

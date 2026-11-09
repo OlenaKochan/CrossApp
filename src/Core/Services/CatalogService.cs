@@ -99,13 +99,16 @@ public sealed class CatalogService(ICatalogStore store)
 
         return importedCount;
     }
+    
     public async Task<int> ImportAsync(ICatalogImporter importer, string path, CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
+        
         var items = await importer.LoadAsync(path, ct);
         var added = 0;
         foreach (var item in items)
         {
-            //await Task.Delay(1000, ct); // штучна затримка на 1 секунду для демонстрації
+           // await Task.Delay(1000, ct); // штучна затримка на 1 секунду для демонстрації
             ct.ThrowIfCancellationRequested(); // Перевірка скасування
 
             if (_store.GetById(item.Id) is not null) continue; // Ідемпотентність
@@ -117,5 +120,60 @@ public sealed class CatalogService(ICatalogStore store)
         return added;
     }
 
+    // Додаткове завдання 1 і 3: Потоковий асинхронний імпорт з підтримкою IProgress та скасування
+public async Task<int> ImportWithProgressAsync(
+    JsonCatalogImporter importer, 
+    string path, 
+    IProgress<int>? progress = null, 
+    CancellationToken ct = default)
+{
+    ArgumentNullException.ThrowIfNull(importer);
+
+    var dtos = new List<ProductDto>();
     
+    // Потокове читання через IAsyncEnumerable
+    await foreach (var dto in importer.StreamLoadAsync(path, ct))
+    {
+        dtos.Add(dto);
+    }
+
+    int total = dtos.Count;
+    if (total == 0) return 0;
+    
+    int added = 0;
+    int skipped = 0; // Лічильник бракованих/невалідних елементів
+
+    for (int i = 0; i < total; i++)
+    {
+        ct.ThrowIfCancellationRequested();
+        
+        try
+        {
+            var product = Product.FromDto(dtos[i]);
+            if (_store.GetById(product.Id) is null)
+            {
+                _store.Add(product);
+                OnChanged(product, CatalogChangeKind.Added, product.Quantity);
+                added++;
+            }
+        }
+        catch (DomainException)
+        {
+            skipped++; // Інваріант порушено 
+        }
+        catch (Exception)
+        {
+            skipped++; // Інші непередбачувані помилки мапінгу
+        }
+
+        // Звіт про прогрес у відсотках
+        int percent = (i + 1) * 100 / total;
+        progress?.Report(percent);
+
+        await Task.Delay(500, ct); // Пауза для плавності
+    }
+    Console.WriteLine($"\n[Звіт імпорту] Успішно додано: {added}, відхилено через брак (порушення інваріантів): {skipped}");
+
+    return added;
+}
 }

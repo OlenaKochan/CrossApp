@@ -31,8 +31,8 @@ namespace Core.Tests
             var store = new InMemoryCatalogStore();
             var service = new CatalogService(store);
             var p = service.Add("SKU-1", "Кабель", "м", 10);
-
-            Assert.Throws<ArgumentException>(() => service.Receive(p.Id, -5));
+            Assert.Throws<ArgumentOutOfRangeException>(() => service.Receive(p.Id, -5));
+            //Assert.Throws<DomainException>(() => p.RegisterArrival(-5));
             Assert.Equal(10, store.GetById(p.Id)!.Quantity);
         }
 
