@@ -1,0 +1,42 @@
+@HostAddress = http://localhost:5080
+
+### 1. Отримати список усіх товарів (GET)
+GET {{HostAddress}}/api/products
+Accept: application/json
+
+### 2. Створити новий товар (POST)
+POST {{HostAddress}}/api/products
+Content-Type: application/json
+
+{
+  "sku": "A-100",
+  "name": "Цемент М400",
+  "unit": "мішок",
+  "quantity": 40
+}
+
+### 3. Отримати товар за ID (GET)
+# (Скопіюйте ID із відповіді запиту POST і підставте замість {id})
+GET {{HostAddress}}/api/products/{id}
+Accept: application/json
+
+### 4. Оновити товар (PUT)
+# (Підставте той самий ID замість {id})
+PUT {{HostAddress}}/api/products/{id}
+Content-Type: application/json
+
+{
+  "sku": "A-100-UPDATED",
+  "name": "Цемент М500",
+  "unit": "мішок",
+  "quantity": 50
+}
+
+### 5. Видалити товар (DELETE)
+# (Підставте той самий ID замість {id})
+DELETE {{HostAddress}}/api/products/{id}
+
+### 6. Перевірка 404 після видалення (GET)
+# (Повторний запит за цим же ID має повернути 404 Not Found)
+GET {{HostAddress}}/api/products/{id}
+Accept: application/json
