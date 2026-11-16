@@ -1,61 +1,52 @@
 ﻿using System;
-using System.IO;
-using System.Threading;
-using System.Threading.Tasks;
-using Core;
-using Core.Services;
+using System.Reflection;
+using Core.Configuration;
+using Core.Domain;
 using Core.Storage;
+using Microsoft.Extensions.Configuration;
 
-namespace Cli
+class Program
 {
-    class Program
+    static void Main(string[] args)
     {
-        static async Task Main(string[] args)
+        var envName = Environment.GetEnvironmentVariable("CROSSAPP_ENVIRONMENT") ?? "Development";
+
+        var config = new ConfigurationBuilder()
+            .SetBasePath(AppContext.BaseDirectory)
+            .AddJsonFile("appsettings.json", optional: false, reloadOnChange: false)
+            .AddJsonFile($"appsettings.{envName}.json", optional: true)
+            .AddUserSecrets(Assembly.GetExecutingAssembly(), optional: true)
+            .AddEnvironmentVariables(prefix: "CROSSAPP_")
+            .AddCommandLine(args)
+            .Build();
+
+        var options = config.Get<AppOptions>() ?? new AppOptions();
+        
+        // Підтримка простої змінної середовища CROSSAPP_DATA_PATH
+        var legacy = Environment.GetEnvironmentVariable("CROSSAPP_DATA_PATH");
+        var storageOptions = new StorageOptions
         {
-            // Додаткове завдання: Зв'язані токени скасування (Ctrl+C від користувача + таймаут 10 секунд)
-            using var userCts = new CancellationTokenSource();
-            using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
-            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(userCts.Token, timeoutCts.Token);
+            DataPath = string.IsNullOrWhiteSpace(legacy) ? options.Storage.DataPath : legacy,
+            FileName = options.Storage.FileName
+        };
 
-            Console.CancelKeyPress += (s, e) => 
-            { 
-                e.Cancel = true; 
-                userCts.Cancel(); 
-            };
+        var resolvedPath = storageOptions.ResolveFullPath(AppContext.BaseDirectory);
 
-            var dataPath = "data/catalog.json";
-            var store = new InMemoryCatalogStore();
-            var service = new CatalogService(store);
+        // Ініціалізуємо сховище за розв'язаним шляхом
+        var store = new FileCatalogStore(resolvedPath);
 
-            // Індикатор прогресу через IProgress<int> із відображенням у консолі
-            var progress = new Progress<int>(percent =>
-            {
-                Console.Write($"\rПрогрес імпорту: [{new string('#', percent / 5)}{new string('-', 20 - (percent / 5))}] {percent}%");
-            });
-
-            try
-            {
-                // Додаткові завдання 1 та 3: Потоковий імпорт із підтримкою прогресу та зв'язаного токена
-                var importer = new JsonCatalogImporter();
-                var added = await service.ImportWithProgressAsync(importer, dataPath, progress, linkedCts.Token);
-                
-                Console.WriteLine($"\nІмпортовано записів: {added}");
-            }
-            catch (OperationCanceledException)
-            {
-                if (timeoutCts.IsCancellationRequested && !userCts.IsCancellationRequested)
-                    Console.WriteLine("\nІмпорт скасовано: перевищено ліміт часу (таймаут).");
-                else
-                    Console.WriteLine("\nІмпорт скасовано користувачем.");
-            }
-            catch (DomainException ex)
-            {
-                Console.WriteLine($"\nДані відхилено: {ex.Message}");
-            }
-            catch (FileNotFoundException)
-            {
-                Console.WriteLine($"\nФайл не знайдено: {dataPath}");
-            }
+        // Демонстрація: перевірка наявності даних / файлу та додавання тестового запису за потреби
+        if (store.List().Count == 0)
+        {
+            var sampleProduct = Product.Create("a1b2c3d4", "A-100", "Цемент М400", "мішок", 40, "Тестова партія");
+            store.Add(sampleProduct);
+            Console.WriteLine("Файл сховища не знайдено або він порожній.");
         }
+
+        var apiKey = config["Integration:ApiKey"];
+
+        Console.WriteLine($"Файл даних: {resolvedPath}");
+        Console.WriteLine(apiKey is null ? "ApiKey: не заданий" : $"ApiKey: присутній, довжина {apiKey.Length}");
+        Console.WriteLine($"Кількість записів у каталозі: {store.List().Count}");
     }
 }

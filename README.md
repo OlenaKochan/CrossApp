@@ -279,3 +279,31 @@ TargetFrameworks: net8.0; net10.0, з умовним визначенням ве
 
 - Фільтрація та запуск тестів (зокрема тестів таймауту та скасування):  
   ```dotnet test --filter "FullyQualifiedName~Tests"```
+
+
+  ## Лабораторна робота 9. Шляхи, JSON, конфігурація, Secrets
+
+1. Ієрархічна конфігурація (`ConfigurationBuilder`)  
+Налаштовано послідовне завантаження параметрів із файлів `appsettings.json`, `appsettings.Development.json`, сховища `UserSecrets`, змінних середовища з префіксом `CROSSAPP_` та аргументів командного рядка згідно з принципом перевизначення пізнішими джерелами.
+
+2. Кросплатформні шляхи (`Path.Combine` & `Path.GetFullPath`)  
+Усунуто абсолютні шляхи в проєкті `src`. Для побудови шляхів до каталогу даних задіяно кросплатформні методи `Path.Combine`, `Path.IsPathRooted` та `Path.GetFullPath` усередині класу `StorageOptions`.
+
+3. Безпека конфіденційних даних (`User Secrets`)  
+Реалізовано зчитування навчального секрету `Integration:ApiKey` за допомогою механізму `dotnet user-secrets`, що забезпечує збереження ключів поза межами Git-репозиторію (у профілі операційної системи).
+
+4. Атомарне сховище та серіалізація (`FileCatalogStore`)  
+Удосконалено сховище даних для роботи з форматом JSON: реалізовано атомарний запис через тимчасовий файл (`.tmp` з наступним перейменуванням через `File.Move`) та налаштовано `JsonSerializerOptions` із `UnsafeRelaxedJsonEscaping` для коректної підтримки кирилиці без екранування.  
+
+### Команди для тестування та запуску застосунку:
+
+- Збірка та запуск юніт-тестів:
+```dotnet test```
+- Ініціалізація сховища секретів для проєкту Cli:
+```dotnet user-secrets init --project src/Cli ```
+- Записати тестовий секрет:
+```dotnet user-secrets set "Integration:ApiKey" "local-dev-key" --project src/Cli ```
+- Перевірити список збережених секретів: 
+```dotnet user-secrets list --project src/Cli ```
+- Перевірка перевизначення через змінні середовища:
+```CROSSAPP_DATA_PATH="/tmp/custom_data" dotnet run --project src/Cli ```
