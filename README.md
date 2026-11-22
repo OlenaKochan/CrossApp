@@ -281,7 +281,7 @@ TargetFrameworks: net8.0; net10.0, з умовним визначенням ве
   ```dotnet test --filter "FullyQualifiedName~Tests"```
 
 
-  ## Лабораторна робота 9. Шляхи, JSON, конфігурація, Secrets
+## Лабораторна робота 9. Шляхи, JSON, конфігурація, Secrets
 
 1. Ієрархічна конфігурація (`ConfigurationBuilder`)  
 Налаштовано послідовне завантаження параметрів із файлів `appsettings.json`, `appsettings.Development.json`, сховища `UserSecrets`, змінних середовища з префіксом `CROSSAPP_` та аргументів командного рядка згідно з принципом перевизначення пізнішими джерелами.
@@ -307,3 +307,70 @@ TargetFrameworks: net8.0; net10.0, з умовним визначенням ве
 ```dotnet user-secrets list --project src/Cli ```
 - Перевірка перевизначення через змінні середовища:
 ```CROSSAPP_DATA_PATH="/tmp/custom_data" dotnet run --project src/Cli ```
+
+
+## Лабораторна робота 10. Розробка Minimal API, пагінація, валідація, мапінг винятків та інтеграційне тестування
+
+1. Базова архітектура Minimal API  
+   Створено структуру проєкту на базі .NET 10 з використанням в пам'яті сховища `InMemoryCatalogStore` та базових ендпоінтів для керування каталогом товарів.
+
+2. Організація маршрутизації (`ProductEndpoints`)  
+   Винесено логіку маршрутизації товарів в окремі класи-розширення для забезпечення чистоти коду та модульності застосунку.
+
+3. Сховище даних та моделі  
+   Реалізовано базові CRUD-операції над сутностями товарів (`Product`) з урахуванням підтримки ідентифікаторів та полів моделі.
+
+4. Базова конфігурація середовища  
+   Налаштовано файл `Program.cs` для запуску вебгоспу Kestrel, підключення сервісів та документації через Scalar UI.
+
+
+### Команди для тестування та запуску застосунку:
+
+- Запуск вебсервісу API на порті 5080: 
+  ```dotnet run --project src/Api --urls http://localhost:5080```  
+  У браузері:
+  ```http://localhost:5080/scalar/v1```
+
+- Тестування валідації через curl: 
+  ```curl -i -X POST http://localhost:5080/api/products -H "Content-Type: application/json" -d '{"sku":"","name":"","unit":"","quantity":-5}' ```
+
+- Створення нового товару (Create): 
+  ```curl -i -X POST http://localhost:5080/api/products -H "Content-Type: application/json" -d '{"sku":"PROD-001","name":"Цемент Портланд","unit":"мішок","quantity":50}'```
+
+- Отримання повного списку товарів (Read All): 
+  ```curl -i "http://localhost:5080/api/products"```
+
+- Отримання товару за ID (Read by ID): 
+  ```curl -i "http://localhost:5080/api/products/{id}"```
+
+- Оновлення існуючого товару (Update): 
+  ```curl -i -X PUT http://localhost:5080/api/products/{id} -H "Content-Type: application/json" -d '{"sku":"PROD-001","name":"Цемент Оновлений","unit":"мішок","quantity":75}'```
+
+- Видалення товару за ID (Delete): 
+  ```curl -i -X DELETE http://localhost:5080/api/products/{id}```
+
+
+### Додаткові завдання 
+
+1. Пагінація та пошук (`page`, `pageSize`, `search`): Реалізовано фільтрацію списку товарів за назвою чи артикулом без урахування регістру та посторінковий вивід за допомогою LINQ-методів `.Skip(...)` і `.Take(...)`.
+2. Валідація через FluentValidation: Інтегровано пакет `FluentValidation`, створено валідатори полів та універсальний `ValidationFilter<T>` на базі `IEndpointFilter`, який автоматично повертає статус `400 Bad Request` із деталями помилок.
+3. Мапінг доменних винятків (`409 Conflict`): Налаштовано глобальний обробник помилок, який перехоплює кастомний `DomainException` (наприклад, при спробі створити дублікат артикулу SKU) і перетворює його на семантично правильний статус `409 Conflict`.
+4. Інтеграційні тести (`WebApplicationFactory`): Створено окремий тестовий проєкт `tests/Api.Tests` на базі `xUnit` та `Microsoft.AspNetCore.Mvc.Testing`, який тестує роботу API як «чорної скриньки» через реальні HTTP-запити (`POST`, `GET`, перевірку заголовків `Location` та статус-кодів).
+
+#### Команди перевірки додаткових завдань:
+- Пагінація та пошук: 
+  ```curl -i "http://localhost:5080/api/products?page=1&pageSize=2&search=Цемент"```
+
+- Валідація через FluentValidation (400): 
+  ```curl -i -X POST http://localhost:5080/api/products -H "Content-Type: application/json" -d '{"sku":"","name":"","unit":"","quantity":-10}'```
+
+- Мапінг доменних винятків (створення першого товару): 
+  ```curl -i -X POST http://localhost:5080/api/products -H "Content-Type: application/json" -d '{"sku":"DUPLICATE-999","name":"Шпаклівка","unit":"відро","quantity":10}'```
+
+- Повторний запит з тим самим SKU (409): 
+  ```curl -i -X POST http://localhost:5080/api/products -H "Content-Type: application/json" -d '{"sku":"DUPLICATE-999","name":"Інша шпаклівка","unit":"відро","quantity":5}'```
+
+- Запуск повного набору модульних та інтеграційних тестів: 
+  ```dotnet test```
+
+git commit -m "lab10: пагінація та пошук, FluentValidation через EndpointFilter, мапінг DomainException на 409 Conflict та тести WebApplicationFactory"

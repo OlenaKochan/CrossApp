@@ -4,6 +4,7 @@ using Api.Contracts;
 using Core.Abstractions;
 using Core.Domain;
 using Core.Dto;
+using Api.Filters;
 
 namespace Api.Endpoints;
 
@@ -13,9 +14,28 @@ public static class ProductEndpoints
     {
         var group = app.MapGroup("/api/products").WithTags("Products");
 
-        // GET: Отримати список усіх товарів
-        group.MapGet("/", (ICatalogStore store) =>
-            TypedResults.Ok(store.List().Select(p => p.ToDto()).ToList()));
+        // Додаткове 1 : GET Отримати список товарів з пагінацією та пошуком
+        group.MapGet("/", (int? page, int? pageSize, string? search, ICatalogStore store) =>
+        {
+            int p = page ?? 1;
+            int size = pageSize ?? 10;
+            var allItems = store.List();
+            // Фільтрація за пошуком (якщо задано)
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                allItems = allItems.Where(x => 
+                    x.Name.Contains(search, StringComparison.OrdinalIgnoreCase) || 
+                    x.Sku.Contains(search, StringComparison.OrdinalIgnoreCase)
+                ).ToList();
+            }
+            var total = allItems.Count;
+            var items = allItems
+                .Skip((p - 1) * size)
+                .Take(size)
+                .Select(p => p.ToDto())
+                .ToList();
+            return TypedResults.Ok(new { items, total });
+        });
 
         // GET: Отримати товар за ID
         group.MapGet("/{id}", Results<Ok<ProductDto>, NotFound> (string id, ICatalogStore store) =>
@@ -34,23 +54,21 @@ public static class ProductEndpoints
             store.Add(created);
 
             return TypedResults.Created($"/api/products/{created.Id}", created.ToDto());
-        });
+        })   //Додаткове 2 Підключаємо фільтр FluentValidation
+        .AddEndpointFilter<ValidationFilter<SaveProductRequest>>();
 
         // PUT: Повністю оновити стан товару за ID
         group.MapPut("/{id}", Results<Ok<ProductDto>, NotFound, ValidationProblem> (string id, SaveProductRequest request, ICatalogStore store) =>
         {
-            if (!request.TryValidate(out var errors)) 
-                return TypedResults.ValidationProblem(errors);
-
             if (store.GetById(id) is null) 
                 return TypedResults.NotFound();
 
-            // Також додаємо 6-й аргумент тут
             var replacement = Product.Create(id, request.Sku, request.Name, request.Unit, request.Quantity, "");
             store.Update(replacement);
 
             return TypedResults.Ok(replacement.ToDto());
-        });
+        })  //Додаткове 2 Підключаємо фільтр FluentValidation
+        .AddEndpointFilter<ValidationFilter<SaveProductRequest>>();
 
         // DELETE: Видалити товар за ID
         group.MapDelete("/{id}", Results<NoContent, NotFound> (string id, ICatalogStore store) =>

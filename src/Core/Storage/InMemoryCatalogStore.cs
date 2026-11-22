@@ -11,6 +11,11 @@ public sealed class InMemoryCatalogStore(IEnumerable<Product>? seed = null) : IC
     public void Add(Product item)
     {
         ArgumentNullException.ThrowIfNull(item);
+        // Перевірка на унікальність SKU (викидає DomainException -> мапиться на 409 Conflict)
+        if (_items.Values.Any(p => p.Sku.Equals(item.Sku, StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new DomainException($"Товар з артикулом '{item.Sku}' уже існує.");
+        }
         if (_items.ContainsKey(item.Id))
             throw new InvalidOperationException($"Запис з id={item.Id} уже існує.");
         _items.Add(item.Id, item);

@@ -5,12 +5,16 @@ using Core.Storage;
 using System.Text.Encodings.Web;
 using System.Text.Unicode;
 using System.Text;
+using FluentValidation;
+using Core;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddOpenApi();
 builder.Services.AddProblemDetails();
 builder.Services.AddSingleton<ICatalogStore, InMemoryCatalogStore>();
+// Реєстрація FluentValidation у DI
+builder.Services.AddValidatorsFromAssemblyContaining<Program>();
 
 // Налаштування для виведення кирилиці у JSON 
 builder.Services.ConfigureHttpJsonOptions(options =>
@@ -20,7 +24,33 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 
 var app = builder.Build();
 
-app.UseExceptionHandler();
+//  Додаткове 3 Мапінг DomainException -> 409 Conflict
+app.UseExceptionHandler(exceptionHandlerApp =>
+{
+    exceptionHandlerApp.Run(async context =>
+    {
+        var exceptionFeature = context.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerFeature>();
+        if (exceptionFeature?.Error is DomainException domainEx)
+        {
+            context.Response.StatusCode = StatusCodes.Status409Conflict;
+            context.Response.ContentType = "application/json";
+            await context.Response.WriteAsJsonAsync(new 
+            { 
+                title = "Conflict Error", 
+                status = 409, 
+                detail = domainEx.Message 
+            });
+            return;
+        }
+        context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+        await context.Response.WriteAsJsonAsync(new 
+        { 
+            title = "An unexpected error occurred.", 
+            status = 500 
+        });
+    });
+});
+
 app.UseStatusCodePages();
 
 // Реєструємо кодування для Windows-1251
@@ -78,3 +108,4 @@ app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 app.MapProducts();
 
 app.Run();
+public partial class Program { } 
