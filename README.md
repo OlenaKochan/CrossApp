@@ -373,4 +373,47 @@ TargetFrameworks: net8.0; net10.0, з умовним визначенням ве
 - Запуск повного набору модульних та інтеграційних тестів: 
   ```dotnet test```
 
-git commit -m "lab10: пагінація та пошук, FluentValidation через EndpointFilter, мапінг DomainException на 409 Conflict та тести WebApplicationFactory"
+
+git commit -m "lab11: EF Core + SQLite, міграції InitialCreate, зв'язок 1:N, EfCatalogStore та оновлення README"
+
+## Лабораторна робота 11. EF Core + SQLite: міграції, зв'язок 1:N, заміна сховища
+
+1. Архітектура та ізоляція шарів  
+   Створено проєкт `src/Infrastructure` на `.NET 10` з перенесенням туди логіки Entity Framework Core; `Core` не містить пакетів EF Core та зберігає доменну модель `Product` і незмінний інтерфейс `ICatalogStore`.
+
+2. Моделі зберігання та зв'язок 1:N (`ProductRow`, `BatchRow`)  
+   Додано persistence-моделі `ProductRow` і `BatchRow` зі зв'язком `1:N` (зовнішній ключ і `DeleteBehavior.Cascade`), не змінюючи доменний клас `Product` та не додаючи до нього навігації.
+
+3. Контекст бази даних (`AppDbContext`) та конфігурація  
+   Описано `AppDbContext` з Fluent API (первинний ключ, обов'язкові поля, обмеження довжини, унікальний індекс `Sku`), підключено рядок з `ConnectionStrings:AppDb` (`Data Source=data/app.db`) та побудову абсолютного шляху від `ContentRootPath` через `Path.Combine` зі створенням каталогу за потреби.
+
+4. Сховище `EfCatalogStore`, міграції та реєстрація в `Program.cs`  
+   Реалізовано `EfCatalogStore` за `ICatalogStore` (відновлення `Product` через `Product.Create`, читання з `AsNoTracking()`, запис через `SaveChanges()`), зареєстровано `AddDbContext` і `Scoped` `EfCatalogStore` у `Program.cs`, застосовано міграцію `InitialCreate` та додано `*.db`, `*.db-shm`, `*.db-wal` у `.gitignore`.
+
+### Команди для міграцій, скидання БД та запуску застосунку:
+
+- Створення міграції `InitialCreate`:
+  ```dotnet ef migrations add InitialCreate --project src/Infrastructure --startup-project src/Api```
+
+- Застосування міграцій до бази даних:
+  ```dotnet ef database update --project src/Infrastructure --startup-project src/Api```
+
+- Скидання бази даних (видалення файлів БД та повторне застосування міграцій):
+  ```rm -f data/app.db data/app.db-shm data/app.db-wal && dotnet ef database update --project src/Infrastructure --startup-project src/Api```
+
+- Перевірка списку міграцій:
+  ```dotnet ef migrations list --project src/Infrastructure --startup-project src/Api```
+
+- Запуск вебсервісу API на порті 5080:
+  ```dotnet run --project src/Api --urls http://localhost:5080```  
+  У браузері:
+  ```http://localhost:5080/scalar/v1```
+
+- Перевірка збереження даних між перезапусками (створення запису):
+  ```curl -i -X POST http://localhost:5080/api/products -H "Content-Type: application/json" -d '{"sku":"A-100","name":"Цемент М400","unit":"мішок","quantity":40}'```
+
+- Перевірка списку товарів після перезапуску (після `Ctrl+C` та повторного `dotnet run`):
+  ```curl -i "http://localhost:5080/api/products"```
+
+- Перевірка збірки та тестів:
+  ```dotnet build && dotnet test```

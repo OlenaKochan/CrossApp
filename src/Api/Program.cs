@@ -1,7 +1,10 @@
 using Scalar.AspNetCore;
 using Api.Endpoints;
 using Core.Abstractions;
-using Core.Storage;
+using Infrastructure;
+using Infrastructure.Persistence;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
 using System.Text.Encodings.Web;
 using System.Text.Unicode;
 using System.Text;
@@ -12,10 +15,23 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddOpenApi();
 builder.Services.AddProblemDetails();
-builder.Services.AddSingleton<ICatalogStore, InMemoryCatalogStore>();
+
+// підключення з ConnectionStrings:AppDb + абсолютний шлях від ContentRootPath
+var raw = builder.Configuration.GetConnectionString("AppDb") ?? "Data Source=data/app.db";
+var csb = new SqliteConnectionStringBuilder(raw);
+if (!Path.IsPathRooted(csb.DataSource))
+{
+    var repoRoot = Path.GetFullPath(Path.Combine(builder.Environment.ContentRootPath, "..", ".."));
+    var full = Path.Combine(repoRoot, csb.DataSource);
+    Directory.CreateDirectory(Path.GetDirectoryName(full)!);
+    csb.DataSource = full;
+}
+
+builder.Services.AddDbContext<AppDbContext>(o => o.UseSqlite(csb.ConnectionString));
+builder.Services.AddScoped<ICatalogStore, EfCatalogStore>();
+
 // Реєстрація FluentValidation у DI
 builder.Services.AddValidatorsFromAssemblyContaining<Program>();
-
 // Налаштування для виведення кирилиці у JSON 
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
@@ -24,7 +40,16 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 
 var app = builder.Build();
 
-//  Додаткове 3 Мапінг DomainException -> 409 Conflict
+// Застосування міграцій у Development
+using (var scope = app.Services.CreateScope())
+{
+    if (app.Environment.IsDevelopment())
+    {
+        scope.ServiceProvider.GetRequiredService<AppDbContext>().Database.Migrate();
+    }
+}
+
+// Мапінг DomainException -> 409 Conflict
 app.UseExceptionHandler(exceptionHandlerApp =>
 {
     exceptionHandlerApp.Run(async context =>
@@ -34,19 +59,19 @@ app.UseExceptionHandler(exceptionHandlerApp =>
         {
             context.Response.StatusCode = StatusCodes.Status409Conflict;
             context.Response.ContentType = "application/json";
-            await context.Response.WriteAsJsonAsync(new 
-            { 
-                title = "Conflict Error", 
-                status = 409, 
-                detail = domainEx.Message 
+            await context.Response.WriteAsJsonAsync(new
+            {
+                title = "Conflict Error",
+                status = 409,
+                detail = domainEx.Message
             });
             return;
         }
         context.Response.StatusCode = StatusCodes.Status500InternalServerError;
-        await context.Response.WriteAsJsonAsync(new 
-        { 
-            title = "An unexpected error occurred.", 
-            status = 500 
+        await context.Response.WriteAsJsonAsync(new
+        {
+            title = "An unexpected error occurred.",
+            status = 500
         });
     });
 });
@@ -59,7 +84,7 @@ Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
 // middleware: розпізнає джерело та конвертує кодування за потреби
 app.Use(async (context, next) =>
 {
-    if (context.Request.ContentType != null && 
+    if (context.Request.ContentType != null &&
         context.Request.ContentType.Contains("application/json") &&
         (HttpMethods.IsPost(context.Request.Method) || HttpMethods.IsPut(context.Request.Method)))
     {
@@ -92,8 +117,11 @@ app.Use(async (context, next) =>
 // Допоміжна функція для перевірки валідності UTF-8
 bool IsValidUtf8(byte[] bytes)
 {
-    try {
-        var utf8 = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true); utf8.GetString(bytes); return true;
+    try
+    {
+        var utf8 = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
+        utf8.GetString(bytes);
+        return true;
     }
     catch { return false; }
 }
@@ -108,4 +136,5 @@ app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 app.MapProducts();
 
 app.Run();
-public partial class Program { } 
+
+public partial class Program { }
